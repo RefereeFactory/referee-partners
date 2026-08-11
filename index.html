@@ -127,6 +127,20 @@
     </div>
 
     <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
+      <div style="font-weight:700;color:#f0a500;font-size:13px;margin-bottom:6px;">🗣️ Live host — her own face &amp; voice (LiveAvatar, real-time)</div>
+      <div style="font-size:11px;color:#888;margin-bottom:6px;">Chosen from LiveAvatar’s own presenters — completely separate from the recorded greeter above. In live real-time mode her voice comes bound to the face you pick; the voice list below is saved for later use.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <select id="liveFace" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her live face…</option></select>
+        <select id="liveVoice" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her live voice (saved for later)…</option></select>
+      </div>
+      <label style="font-size:11px;color:#888;display:block;">Her thinking model (default Opus 4.8)</label>
+      <select id="liveModelPick" style="width:100%;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">Opus 4.8 (default)</option></select>
+      <div id="liveModelNote" style="font-size:11px;color:#c9a862;margin-top:4px;"></div>
+      <button class="btn" onclick="saveLiveConfig()" style="margin-top:8px;border-color:#f0a500;color:#f0a500;">Save live host</button>
+      <span id="liveCfgMsg" style="font-size:11.5px;color:#7fdc7f;margin-left:8px;"></span>
+    </div>
+
+    <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
       <button class="btn" id="deployBtn" onclick="toggleDeploy()" style="border-color:#f0a500;color:#f0a500;">🚀 Deploy to main Factory</button>
       <div id="deployMsg" style="font-size:11.5px;color:#888;margin-top:6px;">Once vetted, this sends the Partner Programme into the Factory’s affiliate section, visible to everyone.</div>
     </div>
@@ -192,18 +206,21 @@ async function generateGreeter() {
   msg.textContent = 'Filming your greeter… about a minute.';
   try {
     const g = await avApi({ action: 'generate', text: text.slice(0, 1400), avatarId: avatarId, voiceId: voiceId });
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 50; i++) {
       await new Promise(function (r) { setTimeout(r, 6000); });
-      const s = await avApi({ action: 'status', videoId: g.videoId, batchId: 'greeter', agentKey: 'affiliate' });
+      let s;
+      try { s = await avApi({ action: 'status', videoId: g.videoId, batchId: 'greeter', agentKey: 'affiliate' }); }
+      catch (err) { msg.textContent = 'Checking… (' + ((i + 1) * 6) + 's) ' + err.message; continue; }
       if (s.status === 'completed' && s.videoUrl) {
         await sb.from('site_settings').upsert({ key: 'affiliate_greeter', value: { url: s.videoUrl, avatarId: avatarId, voiceId: voiceId, model: document.getElementById('grModel').value || 'claude-opus-4-8' } });
         document.getElementById('greeterVideo').src = s.videoUrl; document.getElementById('greeterWrap').style.display = 'block';
-        msg.textContent = '✓ Your greeter is live and saved. She now welcomes every visitor.';
+        msg.textContent = '✓ Your greeter is saved' + (s.archived ? ' to our storage' : '') + '. She now welcomes every visitor.';
         return;
       }
-      if (s.status === 'failed') { msg.textContent = 'That take failed — try another face.'; return; }
+      if (s.status === 'failed') { msg.textContent = 'HeyGen could not make this one: ' + (s.error && s.error.message ? s.error.message : 'render failed') + '. Try a different face, or check your HeyGen plan allows API video.'; return; }
+      msg.textContent = 'Rendering with HeyGen… ' + ((i + 1) * 6) + 's (status: ' + (s.status || 'working') + ')';
     }
-    msg.textContent = 'Taking longer than expected — check back shortly.';
+    msg.textContent = 'HeyGen is taking unusually long. Most likely your HeyGen plan does not include API video credits — check heygen.com → Settings → API / billing, then try again.';
   } catch (e) { msg.textContent = 'Could not film her: ' + e.message; }
 }
 async function signIn() { await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }); }
@@ -227,7 +244,45 @@ async function onSignedIn(session) {
     refreshDeploy();
     loadGreeterTools();
     loadGreeterModels();
+    loadLiveTools();
   }
+}
+async function fnApi(fn, body) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('sign in');
+  const r = await fetch(SB_URL + '/functions/v1/' + fn, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(function () { return {}; }); if (!r.ok) throw new Error(d.error || r.status); return d;
+}
+async function loadLiveTools() {
+  const msg = document.getElementById('liveCfgMsg');
+  // LiveAvatar's own faces + voices (separate from HeyGen)
+  try {
+    const d = await fnApi('liveavatar-list', {});
+    const fp = document.getElementById('liveFace'), vp = document.getElementById('liveVoice');
+    (d.avatars || []).forEach(function (a) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name + (a.gender ? ' (' + a.gender + ')' : ''); fp.appendChild(o); });
+    (d.voices || []).forEach(function (v) { const o = document.createElement('option'); o.value = v.id; o.textContent = v.name + (v.language ? ' · ' + v.language : ''); vp.appendChild(o); });
+  } catch (e) { msg.textContent = 'LiveAvatar list: ' + e.message + ' (add liveavatar_api_key).'; msg.style.color = '#d9534f'; }
+  // Models (same Anthropic list, shown with justifications)
+  try {
+    const dm = await fnApi('anthropic-models', { action: 'list' });
+    const sel = document.getElementById('liveModelPick');
+    (dm.models || []).forEach(function (m) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; o.setAttribute('data-note', m.note || ''); sel.appendChild(o); });
+    const opus = (dm.models || []).find(function (m) { return /opus-4-8/.test(m.id); }); if (opus) sel.value = opus.id;
+    sel.onchange = function () { const o = sel.options[sel.selectedIndex]; document.getElementById('liveModelNote').textContent = o ? (o.getAttribute('data-note') || '') : ''; };
+    sel.onchange();
+  } catch (_) {}
+  // Current saved config
+  try {
+    const { data } = await sb.from('site_settings').select('value').eq('key', 'liveavatar_config').maybeSingle();
+    const c = data && data.value;
+    if (c) { if (c.avatarId) document.getElementById('liveFace').value = c.avatarId; if (c.voiceId) document.getElementById('liveVoice').value = c.voiceId; if (c.model) document.getElementById('liveModelPick').value = c.model; }
+  } catch (_) {}
+}
+async function saveLiveConfig() {
+  const cfg = { avatarId: document.getElementById('liveFace').value, voiceId: document.getElementById('liveVoice').value, model: document.getElementById('liveModelPick').value || 'claude-opus-4-8' };
+  if (!cfg.avatarId) { document.getElementById('liveCfgMsg').textContent = 'Pick her live face first.'; document.getElementById('liveCfgMsg').style.color = '#d9534f'; return; }
+  const { error } = await sb.from('site_settings').upsert({ key: 'liveavatar_config', value: cfg });
+  const m = document.getElementById('liveCfgMsg'); m.textContent = error ? 'Failed: ' + error.message : '✓ Live host saved.'; m.style.color = error ? '#d9534f' : '#7fdc7f';
 }
 async function loadGreeterModels() {
   try {
@@ -322,13 +377,15 @@ async function chatSend() {
 </script>
 
 <script>
-// The heavy HeyGen live-video engine is loaded ONLY when a visitor presses
+// The heavy LiveAvatar real-time engine is loaded ONLY when a visitor presses
 // "Talk live" — so the page itself opens instantly (under 5 seconds).
-let SA = null, AQ = null, SE = null, TT = null;
+// LITE mode: WE supply her words (our own Anthropic brain + our prompt); the
+// avatar just renders speech. Her face is baked into the token server-side.
+let LAS = null, SEV = null;
 async function ensureSdk() {
-  if (SA) return;
-  const m = await import('https://esm.sh/@heygen/streaming-avatar@2');
-  SA = m.default; AQ = m.AvatarQuality; SE = m.StreamingEvents; TT = m.TaskType;
+  if (LAS) return;
+  const m = await import('https://esm.sh/@heygen/liveavatar-web-sdk@0.0.18');
+  LAS = m.LiveAvatarSession; SEV = m.SessionEvent;
 }
 const LSB = 'https://canvbkibjgcnqowjtarf.supabase.co';
 const LANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbnZia2liamdjbnFvd2p0YXJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzE0NDYsImV4cCI6MjA5OTM0NzQ0Nn0.TLskVoTaYI90avy09IuM_kkKvAYUMETTntZkn2M807I';
@@ -339,11 +396,14 @@ async function lFetch(fn, body) {
   const r = await fetch(LSB + '/functions/v1/' + fn, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + LANON }, body: JSON.stringify(body || {}) });
   const d = await r.json().catch(function () { return {}; }); if (!r.ok) throw new Error(d.error || r.status); return d;
 }
+let lVoiceId = '';
 async function loadLiveConfig() {
   try {
     const sb2 = window.supabase.createClient(LSB, LANON);
-    const { data: g } = await sb2.from('site_settings').select('value').eq('key', 'affiliate_greeter').maybeSingle();
+    // The live host reads its OWN LiveAvatar config — separate from the recorded greeter.
+    const { data: g } = await sb2.from('site_settings').select('value').eq('key', 'liveavatar_config').maybeSingle();
     lAvatarId = (g && g.value && g.value.avatarId) || '';
+    lVoiceId = (g && g.value && g.value.voiceId) || '';
     lModel = (g && g.value && g.value.model) || 'claude-opus-4-8';
     const { data: p } = await sb2.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle();
     const hidden = (p && p.value && p.value.text) || '';
@@ -353,7 +413,7 @@ async function loadLiveConfig() {
   // Never disable the button — it must always respond with a clear message.
 }
 window.startLiveHost = async function () {
-  if (!lAvatarId) { lst('The live host isn’t set up yet. Founder: open the founder card, pick her face, voice and model, and press “Generate greeter video” — that sets up the live host too.'); return; }
+  if (!lAvatarId) { lst('The live host isn’t set up yet. Founder: open the founder card, go to “Live host — her own face & voice”, pick her face and model, and press “Save live host”.'); return; }
   document.getElementById('liveStartBtn').disabled = true;
   // Instant feedback: play the recorded greeting so she appears at once while
   // the live session spins up behind it — no blank waiting.
@@ -362,16 +422,22 @@ window.startLiveHost = async function () {
   lst('Your host is connecting — she’ll be live in a few seconds…');
   try {
     await ensureSdk();
-    const { token } = await lFetch('liveavatar-token', {});
-    lAvatar = new SA({ token });
-    lAvatar.on(SE.STREAM_READY, function (e) { if (gv) { try { gv.pause(); } catch (_) {} } const v = document.getElementById('liveVideo'); v.srcObject = e.detail; v.style.display = 'inline-block'; v.play(); lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block'; });
-    lAvatar.on(SE.STREAM_DISCONNECTED, function () { lst('Session ended.'); });
-    await lAvatar.createStartAvatar({ quality: AQ.Low, avatarName: lAvatarId });
+    const { token } = await lFetch('liveavatar-token', {});   // her face is baked into this token
+    lAvatar = new LAS(token);
+    const v = document.getElementById('liveVideo');
+    lAvatar.on(SEV.SESSION_STREAM_READY, function () {
+      if (gv) { try { gv.pause(); } catch (_) {} }
+      lAvatar.attach(v);                                       // SDK wires both video + audio
+      v.style.display = 'inline-block'; try { v.play(); } catch (_) {}
+      lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block';
+    });
+    lAvatar.on(SEV.SESSION_DISCONNECTED, function () { lst('Session ended.'); document.getElementById('liveStartBtn').disabled = false; });
+    await lAvatar.start();
     lChat = [];
   } catch (e) { lst('Could not connect: ' + e.message); document.getElementById('liveStartBtn').disabled = false; }
 };
 window.stopLiveHost = async function () {
-  try { if (lAvatar) await lAvatar.stopAvatar(); } catch (_) {}
+  try { if (lAvatar) await lAvatar.stop(); } catch (_) {}
   lAvatar = null; document.getElementById('liveStartBtn').disabled = false;
   document.getElementById('liveControls').style.display = 'none'; document.getElementById('liveVideo').style.display = 'none';
   lStopMic(); lst('Ended — thank you.');
@@ -384,14 +450,14 @@ async function lSay(text) {
     const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
     const reply = d.reply || 'Could you say that again?';
     lChat.push({ role: 'assistant', content: reply });
-    await lAvatar.speak({ text: reply, taskType: TT.REPEAT });
+    lAvatar.repeat(reply);                                     // LITE: she speaks OUR words
     lst('She is live — talk to her.');
   } catch (e) { lst('Reply failed: ' + e.message); }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
 function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
 function lStopMic() { lMic = false; if (lRec) { try { lRec.stop(); } catch (_) {} lRec = null; } const m = document.getElementById('liveMic'); if (m) m.classList.remove('on'); }
-window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stopAvatar(); } catch (_) {} } });
+window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stop(); } catch (_) {} } });
 loadLiveConfig();
 // Pre-load the live engine AFTER the page has painted, so pressing "Talk live"
 // is instant — the download happens quietly in the background, not on the click.
