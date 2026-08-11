@@ -49,6 +49,20 @@
     <div style="font-size:11.5px;color:#888;margin-top:4px;">Your host explains the programme — press play.</div>
   </div>
 
+  <div id="liveWrap" style="text-align:center;margin-top:12px;">
+    <button class="btn" id="liveStartBtn" onclick="startLiveHost()" style="border-color:#f0a500;color:#f0a500;">🗣️ Talk to our host live</button>
+    <video id="liveVideo" autoplay playsinline style="display:none;width:100%;max-width:380px;border-radius:16px;background:#000;margin-top:10px;"></video>
+    <div id="liveControls" style="display:none;margin-top:8px;">
+      <div style="display:flex;gap:8px;">
+        <input id="liveIn" placeholder="Type to her, or press the mic…" style="flex:1;padding:10px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;" onkeydown="if(event.key==='Enter')sayToHost()">
+        <button class="btn" onclick="sayToHost()">Send</button>
+        <button class="btn" id="liveMic" onclick="toggleLiveMic()">🎤</button>
+        <button class="btn" onclick="stopLiveHost()">■ End</button>
+      </div>
+    </div>
+    <div id="liveStatus" style="font-size:11.5px;color:#888;margin-top:6px;"></div>
+  </div>
+
   <div class="card">
     <h2>How it works</h2>
     <div class="point">1. You share your personal link with someone who’d genuinely benefit.</div>
@@ -104,7 +118,10 @@
         <select id="grAvatar" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her face…</option></select>
         <select id="grVoice" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her voice…</option></select>
       </div>
-      <textarea id="grScript" rows="4" placeholder="What she says…"></textarea>
+      <label style="font-size:11px;color:#888;display:block;margin-top:6px;">Her thinking model for LIVE conversation (default Opus 4.8)</label>
+      <select id="grModel" style="width:100%;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">Opus 4.8 (default)</option></select>
+      <div id="grModelNote" style="font-size:11px;color:#c9a862;margin-top:4px;"></div>
+      <textarea id="grScript" rows="4" placeholder="What she says in the recorded greeting…" style="margin-top:8px;"></textarea>
       <button class="btn" onclick="generateGreeter()" style="margin-top:8px;border-color:#f0a500;color:#f0a500;">🎬 Generate greeter video</button>
       <div id="grMsg" style="font-size:11.5px;color:#888;margin-top:6px;">Made once with HeyGen (~£1–2), saved to our storage, then greets every visitor free. Faces are HeyGen’s licensed presenters.</div>
     </div>
@@ -179,7 +196,7 @@ async function generateGreeter() {
       await new Promise(function (r) { setTimeout(r, 6000); });
       const s = await avApi({ action: 'status', videoId: g.videoId, batchId: 'greeter', agentKey: 'affiliate' });
       if (s.status === 'completed' && s.videoUrl) {
-        await sb.from('site_settings').upsert({ key: 'affiliate_greeter', value: { url: s.videoUrl } });
+        await sb.from('site_settings').upsert({ key: 'affiliate_greeter', value: { url: s.videoUrl, avatarId: avatarId, voiceId: voiceId, model: document.getElementById('grModel').value || 'claude-opus-4-8' } });
         document.getElementById('greeterVideo').src = s.videoUrl; document.getElementById('greeterWrap').style.display = 'block';
         msg.textContent = '✓ Your greeter is live and saved. She now welcomes every visitor.';
         return;
@@ -209,7 +226,20 @@ async function onSignedIn(session) {
     try { const { data: p } = await sb.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle(); document.getElementById('hiddenPrompt').value = (p && p.value && p.value.text) || ''; } catch (_) {}
     refreshDeploy();
     loadGreeterTools();
+    loadGreeterModels();
   }
+}
+async function loadGreeterModels() {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const r = await fetch(SB_URL + '/functions/v1/anthropic-models', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token }, body: JSON.stringify({ action: 'list' }) });
+    const d = await r.json();
+    const sel = document.getElementById('grModel');
+    (d.models || []).forEach(function (m) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; o.setAttribute('data-note', m.note || ''); sel.appendChild(o); });
+    const opus = (d.models || []).find(function (m) { return /opus-4-8/.test(m.id); }); if (opus) sel.value = opus.id;
+    sel.onchange = function () { const o = sel.options[sel.selectedIndex]; document.getElementById('grModelNote').textContent = o ? (o.getAttribute('data-note') || '') : ''; };
+    sel.onchange();
+  } catch (_) {}
 }
 
 // The graduate-to-Factory promotion. This feature belongs to the affiliate section.
@@ -282,6 +312,67 @@ async function chatSend() {
 }
 
 boot();
+</script>
+
+<script type="module">
+import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "https://esm.sh/@heygen/streaming-avatar@2";
+const LSB = 'https://canvbkibjgcnqowjtarf.supabase.co';
+const LANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbnZia2liamdjbnFvd2p0YXJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzE0NDYsImV4cCI6MjA5OTM0NzQ0Nn0.TLskVoTaYI90avy09IuM_kkKvAYUMETTntZkn2M807I';
+let lAvatar = null, lChat = [], lRec = null, lMic = false, lSystem = '', lAvatarId = '', lModel = 'claude-opus-4-8';
+const lst = function (t) { document.getElementById('liveStatus').textContent = t; };
+
+async function lFetch(fn, body) {
+  const r = await fetch(LSB + '/functions/v1/' + fn, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + LANON }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(function () { return {}; }); if (!r.ok) throw new Error(d.error || r.status); return d;
+}
+async function loadLiveConfig() {
+  try {
+    const sb2 = window.supabase.createClient(LSB, LANON);
+    const { data: g } = await sb2.from('site_settings').select('value').eq('key', 'affiliate_greeter').maybeSingle();
+    lAvatarId = (g && g.value && g.value.avatarId) || '';
+    lModel = (g && g.value && g.value.model) || 'claude-opus-4-8';
+    const { data: p } = await sb2.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle();
+    const hidden = (p && p.value && p.value.text) || '';
+    lSystem = "You are the live host of The Factory's partner programme, on a video call. Speak warmly, briefly, naturally. " +
+      "Explain honestly: share The Factory with people who would benefit; when someone you invite joins and takes a subscription, they earn ten pounds — once. It is not a pyramid; a flat one-time reward. Be truthful, never pushy. " + (hidden ? ("Founder's guidance: " + hidden) : "");
+  } catch (_) {}
+  if (!lAvatarId) { const b = document.getElementById('liveStartBtn'); if (b) { b.disabled = true; b.title = 'The live host is being set up.'; } }
+}
+window.startLiveHost = async function () {
+  if (!lAvatarId) { lst('The live host is being set up — please check back soon.'); return; }
+  document.getElementById('liveStartBtn').disabled = true; lst('Connecting to our live host…');
+  try {
+    const { token } = await lFetch('liveavatar-token', {});
+    lAvatar = new StreamingAvatar({ token });
+    lAvatar.on(StreamingEvents.STREAM_READY, function (e) { const v = document.getElementById('liveVideo'); v.srcObject = e.detail; v.style.display = 'inline-block'; v.play(); lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block'; });
+    lAvatar.on(StreamingEvents.STREAM_DISCONNECTED, function () { lst('Session ended.'); });
+    await lAvatar.createStartAvatar({ quality: AvatarQuality.Low, avatarName: lAvatarId });
+    lChat = [];
+  } catch (e) { lst('Could not connect: ' + e.message); document.getElementById('liveStartBtn').disabled = false; }
+};
+window.stopLiveHost = async function () {
+  try { if (lAvatar) await lAvatar.stopAvatar(); } catch (_) {}
+  lAvatar = null; document.getElementById('liveStartBtn').disabled = false;
+  document.getElementById('liveControls').style.display = 'none'; document.getElementById('liveVideo').style.display = 'none';
+  lStopMic(); lst('Ended — thank you.');
+};
+window.sayToHost = async function () { const inp = document.getElementById('liveIn'); const t = inp.value.trim(); if (!t) return; inp.value = ''; await lSay(t); };
+async function lSay(text) {
+  if (!lAvatar) return;
+  lChat.push({ role: 'user', content: text }); lst('Thinking…');
+  try {
+    const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
+    const reply = d.reply || 'Could you say that again?';
+    lChat.push({ role: 'assistant', content: reply });
+    await lAvatar.speak({ text: reply, taskType: TaskType.REPEAT });
+    lst('She is live — talk to her.');
+  } catch (e) { lst('Reply failed: ' + e.message); }
+}
+window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
+function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
+function lStopMic() { lMic = false; if (lRec) { try { lRec.stop(); } catch (_) {} lRec = null; } const m = document.getElementById('liveMic'); if (m) m.classList.remove('on'); }
+window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stopAvatar(); } catch (_) {} } });
+loadLiveConfig();
 </script>
 </body>
 </html>
