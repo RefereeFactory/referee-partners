@@ -128,10 +128,10 @@
 
     <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
       <div style="font-weight:700;color:#f0a500;font-size:13px;margin-bottom:6px;">🗣️ Live host — her own face &amp; voice (LiveAvatar, real-time)</div>
-      <div style="font-size:11px;color:#888;margin-bottom:6px;">Chosen from LiveAvatar’s own presenters — completely separate from the recorded greeter above. In live real-time mode her voice comes bound to the face you pick; the voice list below is saved for later use.</div>
+      <div style="font-size:11px;color:#888;margin-bottom:6px;">Her <b>face</b> is a LiveAvatar presenter; her <b>voice</b> is one of our own ElevenLabs voices — fully independent of each other, and of the recorded greeter above. She thinks with our brain, in real time.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <select id="liveFace" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her live face…</option></select>
-        <select id="liveVoice" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her live voice (saved for later)…</option></select>
+        <select id="liveVoice" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her live voice…</option></select>
       </div>
       <label style="font-size:11px;color:#888;display:block;">Her thinking model (default Opus 4.8)</label>
       <select id="liveModelPick" style="width:100%;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">Opus 4.8 (default)</option></select>
@@ -460,9 +460,16 @@ async function lSay(text) {
     const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
     const reply = d.reply || 'Could you say that again?';
     lChat.push({ role: 'assistant', content: reply });
-    lAvatar.message(reply);                                    // LITE: she speaks OUR words
+    // LITE mode = bring our own audio: our ElevenLabs voice makes the sound, she lip-syncs it.
+    lSpeaking = true;                                          // mute the mic so she doesn't hear herself
+    const a = await lFetch('voice-speak', { text: reply, voiceId: lVoiceId || undefined, format: 'pcm24' });
+    const chunks = (a && a.chunks) || [];
+    if (!chunks.length) throw new Error('no audio (check ElevenLabs key)');
+    chunks.forEach(function (c) { lAvatar.repeatAudio(c); });  // feed her playback buffer, in order
+    // Fallback un-mute in case the "finished speaking" event doesn't arrive.
+    setTimeout(function () { lSpeaking = false; }, (chunks.length + 2) * 1000);
     lst('She is live — talk to her.');
-  } catch (e) { lst('Reply failed: ' + e.message); }
+  } catch (e) { lSpeaking = false; lst('Reply failed: ' + e.message); }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
 function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { if (lSpeaking) return; lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
