@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Partner with The Factory — earn by sharing something good</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0c'/%3E%3Ctext y='72' x='50' font-size='60' text-anchor='middle'%3E🤝%3C/text%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0c; color: #e6e6e6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 26px 18px 70px; }
+  .eyebrow { text-align: center; letter-spacing: 4px; font-size: 11px; color: #777; font-weight: 700; }
+  .logo { text-align: center; font-size: 44px; margin: 8px 0 2px; }
+  h1 { text-align: center; font-size: 25px; color: #f0a500; line-height: 1.25; margin-bottom: 8px; }
+  .lead { text-align: center; font-size: 15px; color: #ccc; line-height: 1.7; }
+  .invited { text-align: center; font-size: 12.5px; color: #7fdc7f; margin-top: 10px; }
+  .card { background: #141418; border: 1px solid #2c2c33; border-radius: 14px; padding: 18px; margin-top: 18px; }
+  .card h2 { font-size: 15px; color: #f0a500; margin-bottom: 8px; }
+  .point { font-size: 14px; color: #ddd; line-height: 1.7; margin-bottom: 6px; }
+  .point b { color: #fff; }
+  .join { display: block; width: 100%; margin-top: 16px; padding: 15px; background: linear-gradient(135deg, #f0a500, #d48800); color: #111; border: none; border-radius: 12px; font-size: 17px; font-weight: 800; cursor: pointer; text-align: center; text-decoration: none; }
+  .btn { background: #0d0d0f; border: 1px solid #2c2c33; color: #ddd; border-radius: 9px; padding: 10px 14px; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .g-btn { background: #fff; color: #222; border: none; border-radius: 10px; padding: 11px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+
+  #chatLog { max-height: 260px; overflow-y: auto; margin-bottom: 10px; }
+  .msg { margin-bottom: 10px; font-size: 14px; line-height: 1.6; }
+  .msg.you { text-align: right; color: #9ec6ff; }
+  .msg.guide { color: #e6e6e6; }
+  .msg .who { font-size: 10.5px; color: #777; display: block; }
+  .chatRow { display: flex; gap: 8px; }
+  #chatIn { flex: 1; padding: 11px; background: #0d0d0f; border: 1px solid #2c2c33; border-radius: 9px; color: #eee; font-size: 14px; }
+  .share a { margin-right: 10px; }
+  #linkBox { word-break: break-all; font-size: 12.5px; color: #f0a500; background: #0d0d0f; border: 1px solid #2c2c33; border-radius: 8px; padding: 10px; margin: 8px 0; }
+  .note { font-size: 11.5px; color: #777; text-align: center; margin-top: 18px; line-height: 1.6; }
+  textarea { width: 100%; padding: 10px; background: #0d0d0f; border: 1px solid #2c2c33; border-radius: 8px; color: #eee; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">REFEREE INNOVATIONS</div>
+  <div class="logo">🤝</div>
+  <h1>Share something good.<br>Earn a fair thank-you.</h1>
+  <div class="lead">The Factory turns a plain description into a live website or app in about ninety seconds. If you know someone it would help, introduce them — and earn <b style="color:#f0a500;">£10</b> when they join and subscribe.</div>
+  <div class="invited" id="invited"></div>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <div class="point">1. You share your personal link with someone who’d genuinely benefit.</div>
+    <div class="point">2. They join The Factory and take a subscription.</div>
+    <div class="point">3. You earn <b>£10 — once</b>, when they subscribe.</div>
+    <div class="point" style="color:#9ec6ff;margin-top:10px;">This is <b>not</b> a pyramid. A flat, one-time £10 — never a growing cut, never more for joining early, never earnings from other people’s recruits. Just a genuine thank-you for a genuine introduction.</div>
+    <a class="join" id="joinBtn" href="#">Join The Factory →</a>
+  </div>
+
+  <div class="card">
+    <h2>💬 Ask our guide anything</h2>
+    <div id="chatLog"><div class="msg guide"><span class="who">Guide</span>Hello! Ask me anything about the partner programme — how the £10 works, who it’s for, or how to share your link.</div></div>
+    <div class="chatRow">
+      <input id="chatIn" placeholder="Type your question…" onkeydown="if(event.key==='Enter')chatSend()">
+      <button class="btn" onclick="chatSend()">Send</button>
+    </div>
+  </div>
+
+  <div class="card" id="partnerCard" style="display:none;">
+    <h2>🔗 Your personal link</h2>
+    <div style="font-size:13px;color:#ccc;">Share this — anyone who opens it sees this page, and joins under you:</div>
+    <div id="linkBox"></div>
+    <div class="share">
+      <a class="btn" id="waShare" target="_blank" style="color:#25d366;">✆ WhatsApp</a>
+      <a class="btn" id="mailShare" style="color:#9ec6ff;">✉ Email</a>
+      <button class="btn" onclick="copyLink()">📋 Copy</button>
+    </div>
+  </div>
+
+  <div class="card" id="signinCard">
+    <h2>Become a partner</h2>
+    <div style="font-size:13px;color:#ccc;margin-bottom:10px;">Sign in to get your personal link and start sharing.</div>
+    <button class="g-btn" onclick="signIn()">Sign in with Google</button>
+  </div>
+
+  <div class="card" id="founderCard" style="display:none;">
+    <h2>⚙ Founder — guide’s hidden prompt</h2>
+    <div style="font-size:12px;color:#888;margin-bottom:8px;">Extra guidance the AI guide follows. Visitors never see this.</div>
+    <textarea id="hiddenPrompt" rows="3" placeholder="e.g. Emphasise helping small local businesses…"></textarea>
+    <button class="btn" onclick="saveHidden()" style="margin-top:8px;">Save guidance</button>
+    <span id="hiddenMsg" style="font-size:12px;color:#7fdc7f;margin-left:8px;"></span>
+    <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
+      <button class="btn" id="deployBtn" onclick="toggleDeploy()" style="border-color:#f0a500;color:#f0a500;">🚀 Deploy to main Factory</button>
+      <div id="deployMsg" style="font-size:11.5px;color:#888;margin-top:6px;">Once vetted, this sends the Partner Programme into the Factory’s affiliate section, visible to everyone.</div>
+    </div>
+  </div>
+
+  <div class="note">£10 rewards are tracked now and paid once live payments are switched on. Genuine introductions only — for the good of the people you bring.</div>
+</div>
+
+<script>
+const SB_URL = 'https://canvbkibjgcnqowjtarf.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbnZia2liamdjbnFvd2p0YXJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzE0NDYsImV4cCI6MjA5OTM0NzQ0Nn0.TLskVoTaYI90avy09IuM_kkKvAYUMETTntZkn2M807I';
+const sb = window.supabase.createClient(SB_URL, SB_ANON);
+const FACTORY = 'https://factory-the-factory-ui.netlify.app';
+
+const params = new URLSearchParams(location.search);
+const ref = (params.get('ref') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+let chat = [];
+
+function boot() {
+  if (ref) document.getElementById('invited').textContent = 'You were invited by one of our partners — welcome.';
+  document.getElementById('joinBtn').href = FACTORY + (ref ? '/?ref=' + encodeURIComponent(ref) : '/');
+  sb.auth.getSession().then(function (r) { if (r.data.session) onSignedIn(r.data.session); });
+}
+async function signIn() { await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }); }
+sb.auth.onAuthStateChange(function (_e, s) { if (s) onSignedIn(s); });
+
+async function onSignedIn(session) {
+  const { data } = await sb.from('users').select('referral_code,is_founder').eq('auth_id', session.user.id).single();
+  if (!data) return;
+  document.getElementById('signinCard').style.display = 'none';
+  if (data.referral_code) {
+    const link = location.origin + location.pathname + '?ref=' + encodeURIComponent(data.referral_code);
+    document.getElementById('linkBox').textContent = link;
+    document.getElementById('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('Have a look at The Factory — it builds you a website in ninety seconds: ' + link);
+    document.getElementById('mailShare').href = 'mailto:?subject=' + encodeURIComponent('A tool I think you’ll like') + '&body=' + encodeURIComponent('Have a look at The Factory: ' + link);
+    document.getElementById('partnerCard').style.display = 'block';
+    window._link = link;
+  }
+  if (data.is_founder) {
+    document.getElementById('founderCard').style.display = 'block';
+    try { const { data: p } = await sb.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle(); document.getElementById('hiddenPrompt').value = (p && p.value && p.value.text) || ''; } catch (_) {}
+    refreshDeploy();
+  }
+}
+
+// The graduate-to-Factory promotion. This feature belongs to the affiliate section.
+const FEATURE = { key: 'affiliate', name: 'Partner Programme', url: location.origin + '/', section: 'affiliate', tagline: 'Share The Factory and earn £10 when someone you invite subscribes.', icon: '🤝' };
+let featurePromoted = false;
+async function refreshDeploy() {
+  try {
+    const { data } = await sb.from('factory_features').select('promoted').eq('key', FEATURE.key).maybeSingle();
+    featurePromoted = !!(data && data.promoted);
+  } catch (_) {}
+  document.getElementById('deployBtn').textContent = featurePromoted ? '✓ Live in the Factory — tap to remove' : '🚀 Deploy to main Factory';
+}
+async function toggleDeploy() {
+  const next = !featurePromoted;
+  const { error } = await sb.from('factory_features').upsert({ key: FEATURE.key, name: FEATURE.name, url: FEATURE.url, section: FEATURE.section, tagline: FEATURE.tagline, icon: FEATURE.icon, promoted: next, updated_at: new Date().toISOString() });
+  document.getElementById('deployMsg').textContent = error ? 'Failed: ' + error.message : (next ? '✓ Deployed to the Factory’s affiliate section — visitors see it now.' : 'Removed from the Factory.');
+  refreshDeploy();
+}
+function copyLink() { if (window._link) navigator.clipboard.writeText(window._link); }
+
+async function saveHidden() {
+  const text = document.getElementById('hiddenPrompt').value.trim();
+  const { error } = await sb.from('site_settings').upsert({ key: 'affiliate_prompt', value: { text: text } });
+  document.getElementById('hiddenMsg').textContent = error ? 'Failed: ' + error.message : '✓ Saved.';
+}
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function addMsg(who, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (who === 'you' ? 'you' : 'guide');
+  d.innerHTML = '<span class="who">' + (who === 'you' ? 'You' : 'Guide') + '</span>' + esc(text);
+  document.getElementById('chatLog').appendChild(d);
+  document.getElementById('chatLog').scrollTop = 1e9;
+}
+async function chatSend() {
+  const inp = document.getElementById('chatIn');
+  const text = inp.value.trim(); if (!text) return;
+  inp.value = ''; addMsg('you', text);
+  chat.push({ role: 'user', content: text });
+  addMsg('guide', '…');
+  const thinking = document.getElementById('chatLog').lastChild;
+  try {
+    const r = await fetch(SB_URL + '/functions/v1/affiliate-desk', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SB_ANON },
+      body: JSON.stringify({ messages: chat })
+    });
+    const d = await r.json();
+    const reply = d.reply || 'Please try again in a moment.';
+    thinking.innerHTML = '<span class="who">Guide</span>' + esc(reply);
+    chat.push({ role: 'assistant', content: reply });
+  } catch (e) { thinking.innerHTML = '<span class="who">Guide</span>Sorry, I could not answer just now — please try again.'; }
+}
+
+boot();
+</script>
+</body>
+</html>
