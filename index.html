@@ -311,7 +311,14 @@ async function chatSend() {
   } catch (e) { thinking.innerHTML = '<span class="who">Guide</span>Sorry, I could not answer just now — please try again.'; }
 }
 
-boot();
+  // Placeholders so the live button ALWAYS responds, even before/if the live
+  // module finishes loading. The module overwrites these when it's ready.
+  window.startLiveHost = window.startLiveHost || function () { document.getElementById('liveStatus').textContent = 'Waking the live host… one moment. If nothing happens after a few seconds, reload the page.'; };
+  window.stopLiveHost = window.stopLiveHost || function () {};
+  window.sayToHost = window.sayToHost || function () {};
+  window.toggleLiveMic = window.toggleLiveMic || function () {};
+
+  boot();
 </script>
 
 <script type="module">
@@ -336,10 +343,10 @@ async function loadLiveConfig() {
     lSystem = "You are the live host of The Factory's partner programme, on a video call. Speak warmly, briefly, naturally. " +
       "Explain honestly: share The Factory with people who would benefit; when someone you invite joins and takes a subscription, they earn ten pounds — once. It is not a pyramid; a flat one-time reward. Be truthful, never pushy. " + (hidden ? ("Founder's guidance: " + hidden) : "");
   } catch (_) {}
-  if (!lAvatarId) { const b = document.getElementById('liveStartBtn'); if (b) { b.disabled = true; b.title = 'The live host is being set up.'; } }
+  // Never disable the button — it must always respond with a clear message.
 }
 window.startLiveHost = async function () {
-  if (!lAvatarId) { lst('The live host is being set up — please check back soon.'); return; }
+  if (!lAvatarId) { lst('The live host isn’t set up yet. Founder: open the founder card, pick her face, voice and model, and press “Generate greeter video” — that sets up the live host too.'); return; }
   document.getElementById('liveStartBtn').disabled = true; lst('Connecting to our live host…');
   try {
     const { token } = await lFetch('liveavatar-token', {});
