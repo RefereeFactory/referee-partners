@@ -321,8 +321,15 @@ async function chatSend() {
   boot();
 </script>
 
-<script type="module">
-import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "https://esm.sh/@heygen/streaming-avatar@2";
+<script>
+// The heavy HeyGen live-video engine is loaded ONLY when a visitor presses
+// "Talk live" — so the page itself opens instantly (under 5 seconds).
+let SA = null, AQ = null, SE = null, TT = null;
+async function ensureSdk() {
+  if (SA) return;
+  const m = await import('https://esm.sh/@heygen/streaming-avatar@2');
+  SA = m.default; AQ = m.AvatarQuality; SE = m.StreamingEvents; TT = m.TaskType;
+}
 const LSB = 'https://canvbkibjgcnqowjtarf.supabase.co';
 const LANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbnZia2liamdjbnFvd2p0YXJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzE0NDYsImV4cCI6MjA5OTM0NzQ0Nn0.TLskVoTaYI90avy09IuM_kkKvAYUMETTntZkn2M807I';
 let lAvatar = null, lChat = [], lRec = null, lMic = false, lSystem = '', lAvatarId = '', lModel = 'claude-opus-4-8';
@@ -347,13 +354,19 @@ async function loadLiveConfig() {
 }
 window.startLiveHost = async function () {
   if (!lAvatarId) { lst('The live host isn’t set up yet. Founder: open the founder card, pick her face, voice and model, and press “Generate greeter video” — that sets up the live host too.'); return; }
-  document.getElementById('liveStartBtn').disabled = true; lst('Connecting to our live host…');
+  document.getElementById('liveStartBtn').disabled = true;
+  // Instant feedback: play the recorded greeting so she appears at once while
+  // the live session spins up behind it — no blank waiting.
+  const gv = document.getElementById('greeterVideo');
+  if (gv && gv.getAttribute('src')) { try { gv.currentTime = 0; gv.play(); } catch (_) {} }
+  lst('Your host is connecting — she’ll be live in a few seconds…');
   try {
+    await ensureSdk();
     const { token } = await lFetch('liveavatar-token', {});
-    lAvatar = new StreamingAvatar({ token });
-    lAvatar.on(StreamingEvents.STREAM_READY, function (e) { const v = document.getElementById('liveVideo'); v.srcObject = e.detail; v.style.display = 'inline-block'; v.play(); lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block'; });
-    lAvatar.on(StreamingEvents.STREAM_DISCONNECTED, function () { lst('Session ended.'); });
-    await lAvatar.createStartAvatar({ quality: AvatarQuality.Low, avatarName: lAvatarId });
+    lAvatar = new SA({ token });
+    lAvatar.on(SE.STREAM_READY, function (e) { if (gv) { try { gv.pause(); } catch (_) {} } const v = document.getElementById('liveVideo'); v.srcObject = e.detail; v.style.display = 'inline-block'; v.play(); lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block'; });
+    lAvatar.on(SE.STREAM_DISCONNECTED, function () { lst('Session ended.'); });
+    await lAvatar.createStartAvatar({ quality: AQ.Low, avatarName: lAvatarId });
     lChat = [];
   } catch (e) { lst('Could not connect: ' + e.message); document.getElementById('liveStartBtn').disabled = false; }
 };
@@ -371,7 +384,7 @@ async function lSay(text) {
     const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
     const reply = d.reply || 'Could you say that again?';
     lChat.push({ role: 'assistant', content: reply });
-    await lAvatar.speak({ text: reply, taskType: TaskType.REPEAT });
+    await lAvatar.speak({ text: reply, taskType: TT.REPEAT });
     lst('She is live — talk to her.');
   } catch (e) { lst('Reply failed: ' + e.message); }
 }
@@ -380,6 +393,10 @@ function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeec
 function lStopMic() { lMic = false; if (lRec) { try { lRec.stop(); } catch (_) {} lRec = null; } const m = document.getElementById('liveMic'); if (m) m.classList.remove('on'); }
 window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stopAvatar(); } catch (_) {} } });
 loadLiveConfig();
+// Pre-load the live engine AFTER the page has painted, so pressing "Talk live"
+// is instant — the download happens quietly in the background, not on the click.
+if ('requestIdleCallback' in window) requestIdleCallback(function () { ensureSdk().catch(function () {}); });
+else setTimeout(function () { ensureSdk().catch(function () {}); }, 2500);
 </script>
 </body>
 </html>
