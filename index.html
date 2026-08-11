@@ -480,7 +480,33 @@ async function lSay(text) {
   }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
-function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { if (lSpeaking) return; lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
+function lStartMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { lst('This browser can’t listen — type below instead. (Chrome hears best.)'); return; }
+  lRec = new SR();
+  lRec.lang = 'en-GB';
+  lRec.continuous = true;        // keep listening across pauses instead of stopping at the first silence
+  lRec.interimResults = false;
+  lRec.onstart = function () { if (lMic) lst('🎤 She is listening — just talk.'); };
+  lRec.onresult = function (e) {
+    if (lSpeaking) return;                                   // she's talking — don't transcribe her
+    const r = e.results[e.resultIndex];                      // continuous mode accumulates results
+    if (r && r.isFinal && r[0] && r[0].transcript.trim()) lSay(r[0].transcript.trim());
+  };
+  // A silent mic is a lie — every failure must say its name.
+  lRec.onerror = function (e) {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      lMic = false; const m = document.getElementById('liveMic'); if (m) m.classList.remove('on');
+      lst('Microphone blocked. Click the mic/camera icon in the address bar → Allow → press 🎤. On Mac also check System Settings → Privacy → Microphone for this browser. (Typing below works meanwhile.)');
+    } else if (e.error === 'audio-capture') {
+      lMic = false; lst('No microphone found — check your input device. (Typing below works.)');
+    }
+    // 'no-speech' and 'aborted' are normal silences — onend restarts quietly.
+  };
+  lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } };
+  try { lRec.start(); } catch (_) {}
+  lMic = true; document.getElementById('liveMic').classList.add('on');
+}
 function lStopMic() { lMic = false; if (lRec) { try { lRec.stop(); } catch (_) {} lRec = null; } const m = document.getElementById('liveMic'); if (m) m.classList.remove('on'); }
 window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stop(); } catch (_) {} } });
 loadLiveConfig();
