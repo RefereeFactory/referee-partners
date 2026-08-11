@@ -381,12 +381,13 @@ async function chatSend() {
 // "Talk live" — so the page itself opens instantly (under 5 seconds).
 // LITE mode: WE supply her words (our own Anthropic brain + our prompt); the
 // avatar just renders speech. Her face is baked into the token server-side.
-let LAS = null, SEV = null;
+let LAS = null, SEV = null, AEV = null;
 async function ensureSdk() {
   if (LAS) return;
   const m = await import('https://esm.sh/@heygen/liveavatar-web-sdk@0.0.18');
-  LAS = m.LiveAvatarSession; SEV = m.SessionEvent;
+  LAS = m.LiveAvatarSession; SEV = m.SessionEvent; AEV = m.AgentEventsEnum;
 }
+let lSpeaking = false;   // true while she is talking — so the mic doesn't hear her own voice
 const LSB = 'https://canvbkibjgcnqowjtarf.supabase.co';
 const LANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbnZia2liamdjbnFvd2p0YXJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzE0NDYsImV4cCI6MjA5OTM0NzQ0Nn0.TLskVoTaYI90avy09IuM_kkKvAYUMETTntZkn2M807I';
 let lAvatar = null, lChat = [], lRec = null, lMic = false, lSystem = '', lAvatarId = '', lModel = 'claude-opus-4-8';
@@ -413,6 +414,8 @@ async function loadLiveConfig() {
   // Never disable the button — it must always respond with a clear message.
 }
 window.startLiveHost = async function () {
+  // Always re-read the freshest saved config, so a just-saved host works without a page reload.
+  await loadLiveConfig();
   if (!lAvatarId) { lst('The live host isn’t set up yet. Founder: open the founder card, go to “Live host — her own face & voice”, pick her face and model, and press “Save live host”.'); return; }
   document.getElementById('liveStartBtn').disabled = true;
   // Instant feedback: play the recorded greeting so she appears at once while
@@ -429,8 +432,15 @@ window.startLiveHost = async function () {
       if (gv) { try { gv.pause(); } catch (_) {} }
       lAvatar.attach(v);                                       // SDK wires both video + audio
       v.style.display = 'inline-block'; try { v.play(); } catch (_) {}
-      lst('She is live — say hello.'); document.getElementById('liveControls').style.display = 'block';
+      document.getElementById('liveControls').style.display = 'block';
+      lStartMic();                                             // voice-first: she listens at once — just talk
+      lst(lMic ? 'She is live — just talk to her.' : 'She is live — say hello (type below).');
     });
+    // Mute the mic while she speaks, so she never hears her own voice back.
+    if (AEV) {
+      lAvatar.on(AEV.AVATAR_SPEAK_STARTED, function () { lSpeaking = true; });
+      lAvatar.on(AEV.AVATAR_SPEAK_ENDED, function () { lSpeaking = false; });
+    }
     lAvatar.on(SEV.SESSION_DISCONNECTED, function () { lst('Session ended.'); document.getElementById('liveStartBtn').disabled = false; });
     await lAvatar.start();
     lChat = [];
@@ -450,12 +460,12 @@ async function lSay(text) {
     const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
     const reply = d.reply || 'Could you say that again?';
     lChat.push({ role: 'assistant', content: reply });
-    lAvatar.repeat(reply);                                     // LITE: she speaks OUR words
+    lAvatar.message(reply);                                    // LITE: she speaks OUR words
     lst('She is live — talk to her.');
   } catch (e) { lst('Reply failed: ' + e.message); }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
-function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
+function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { if (lSpeaking) return; lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
 function lStopMic() { lMic = false; if (lRec) { try { lRec.stop(); } catch (_) {} lRec = null; } const m = document.getElementById('liveMic'); if (m) m.classList.remove('on'); }
 window.addEventListener('beforeunload', function () { if (lAvatar) { try { lAvatar.stop(); } catch (_) {} } });
 loadLiveConfig();
