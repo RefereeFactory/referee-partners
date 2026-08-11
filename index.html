@@ -44,6 +44,11 @@
   <div class="lead">The Factory turns a plain description into a live website or app in about ninety seconds. If you know someone it would help, introduce them — and earn <b style="color:#f0a500;">£10</b> when they join and subscribe.</div>
   <div class="invited" id="invited"></div>
 
+  <div id="greeterWrap" style="display:none;text-align:center;margin-top:16px;">
+    <video id="greeterVideo" controls playsinline style="width:100%;max-width:380px;border-radius:16px;background:#000;"></video>
+    <div style="font-size:11.5px;color:#888;margin-top:4px;">Your host explains the programme — press play.</div>
+  </div>
+
   <div class="card">
     <h2>How it works</h2>
     <div class="point">1. You share your personal link with someone who’d genuinely benefit.</div>
@@ -59,6 +64,14 @@
     <div class="chatRow">
       <input id="chatIn" placeholder="Type your question…" onkeydown="if(event.key==='Enter')chatSend()">
       <button class="btn" onclick="chatSend()">Send</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div onclick="toggleTransparency()" style="cursor:pointer;color:#f0a500;font-weight:700;font-size:14px;user-select:none;"><span id="trArrow">▸</span> 📖 What our host is told — open to all</div>
+    <div id="trBody" style="display:none;margin-top:8px;">
+      <div style="font-size:12px;color:#888;margin-bottom:6px;">In the spirit of 100% transparency, here is the guidance our AI host follows. Anyone may read it; only the founder may change it. Nothing is hidden.</div>
+      <div id="trText" style="font-size:12.5px;color:#ccc;white-space:pre-wrap;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;padding:10px;line-height:1.6;"></div>
     </div>
   </div>
 
@@ -80,11 +93,22 @@
   </div>
 
   <div class="card" id="founderCard" style="display:none;">
-    <h2>⚙ Founder — guide’s hidden prompt</h2>
-    <div style="font-size:12px;color:#888;margin-bottom:8px;">Extra guidance the AI guide follows. Visitors never see this.</div>
+    <h2>⚙ Founder — the guide’s guidance</h2>
+    <div style="font-size:12px;color:#888;margin-bottom:8px;">Extra guidance the AI host follows. This is <b>open for anyone to read</b> on the page above (100% transparency) — only you can edit it here.</div>
     <textarea id="hiddenPrompt" rows="3" placeholder="e.g. Emphasise helping small local businesses…"></textarea>
     <button class="btn" onclick="saveHidden()" style="margin-top:8px;">Save guidance</button>
     <span id="hiddenMsg" style="font-size:12px;color:#7fdc7f;margin-left:8px;"></span>
+    <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
+      <div style="font-weight:700;color:#f0a500;font-size:13px;margin-bottom:6px;">🎬 The greeter — the lady who welcomes partners</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <select id="grAvatar" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her face…</option></select>
+        <select id="grVoice" style="flex:1;min-width:130px;padding:8px;background:#0d0d0f;border:1px solid #2c2c33;border-radius:8px;color:#eee;font-size:12px;"><option value="">her voice…</option></select>
+      </div>
+      <textarea id="grScript" rows="4" placeholder="What she says…"></textarea>
+      <button class="btn" onclick="generateGreeter()" style="margin-top:8px;border-color:#f0a500;color:#f0a500;">🎬 Generate greeter video</button>
+      <div id="grMsg" style="font-size:11.5px;color:#888;margin-top:6px;">Made once with HeyGen (~£1–2), saved to our storage, then greets every visitor free. Faces are HeyGen’s licensed presenters.</div>
+    </div>
+
     <div style="border-top:1px solid #2c2c33;margin-top:14px;padding-top:12px;">
       <button class="btn" id="deployBtn" onclick="toggleDeploy()" style="border-color:#f0a500;color:#f0a500;">🚀 Deploy to main Factory</button>
       <div id="deployMsg" style="font-size:11.5px;color:#888;margin-top:6px;">Once vetted, this sends the Partner Programme into the Factory’s affiliate section, visible to everyone.</div>
@@ -107,7 +131,63 @@ let chat = [];
 function boot() {
   if (ref) document.getElementById('invited').textContent = 'You were invited by one of our partners — welcome.';
   document.getElementById('joinBtn').href = FACTORY + (ref ? '/?ref=' + encodeURIComponent(ref) : '/');
+  loadGreeter();
   sb.auth.getSession().then(function (r) { if (r.data.session) onSignedIn(r.data.session); });
+}
+
+async function loadGreeter() {
+  try {
+    const { data } = await sb.from('site_settings').select('value').eq('key', 'affiliate_greeter').maybeSingle();
+    const url = data && data.value && data.value.url;
+    if (url) { document.getElementById('greeterVideo').src = url; document.getElementById('greeterWrap').style.display = 'block'; }
+  } catch (_) {}
+}
+
+// Founder greeter generation, via the avatar-video engine (fresh token each call).
+async function avApi(body) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('sign in');
+  const r = await fetch(SB_URL + '/functions/v1/avatar-video', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token }, body: JSON.stringify(body) });
+  const d = await r.json().catch(function () { return {}; });
+  if (!r.ok) throw new Error(d.error || r.status);
+  return d;
+}
+const GREETER_DEFAULT = "Hello, and welcome. I'm delighted you're here. The Factory builds a real website or web app for anyone, from a few plain words, in about ninety seconds. Our partner programme is simple and honest: share The Factory with someone who would truly benefit, and when they join and take a subscription, you receive ten pounds — once, as a genuine thank-you. It is not a pyramid; just a fair reward for a good introduction, in the spirit of helping people build something of their own. If you'd like to join us, press the Join button below, and I'll be right here to help.";
+async function loadGreeterTools() {
+  document.getElementById('grScript').value = document.getElementById('grScript').value || GREETER_DEFAULT;
+  try {
+    const av = await avApi({ action: 'avatars' });
+    const female = (av.avatars || []).filter(function (a) { return /female|woman/i.test(a.gender || ''); });
+    const ap = document.getElementById('grAvatar');
+    (female.length ? female : (av.avatars || [])).forEach(function (a) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name; ap.appendChild(o); });
+    const vo = await avApi({ action: 'voices' });
+    const fv = (vo.voices || []).filter(function (v) { return /female|woman/i.test(v.gender || '') && /^en/i.test(v.language || 'en'); });
+    const vp = document.getElementById('grVoice');
+    (fv.length ? fv : (vo.voices || [])).slice(0, 40).forEach(function (v) { const o = document.createElement('option'); o.value = v.id; o.textContent = v.name; vp.appendChild(o); });
+  } catch (e) { document.getElementById('grMsg').textContent = 'Connect HeyGen (heygen_api_key) to make the greeter. ' + e.message; }
+}
+async function generateGreeter() {
+  const avatarId = document.getElementById('grAvatar').value, voiceId = document.getElementById('grVoice').value;
+  const text = document.getElementById('grScript').value.trim();
+  const msg = document.getElementById('grMsg');
+  if (!avatarId || !voiceId) { msg.textContent = 'Choose her face and voice first.'; return; }
+  if (!text) { msg.textContent = 'Write what she says.'; return; }
+  msg.textContent = 'Filming your greeter… about a minute.';
+  try {
+    const g = await avApi({ action: 'generate', text: text.slice(0, 1400), avatarId: avatarId, voiceId: voiceId });
+    for (let i = 0; i < 40; i++) {
+      await new Promise(function (r) { setTimeout(r, 6000); });
+      const s = await avApi({ action: 'status', videoId: g.videoId, batchId: 'greeter', agentKey: 'affiliate' });
+      if (s.status === 'completed' && s.videoUrl) {
+        await sb.from('site_settings').upsert({ key: 'affiliate_greeter', value: { url: s.videoUrl } });
+        document.getElementById('greeterVideo').src = s.videoUrl; document.getElementById('greeterWrap').style.display = 'block';
+        msg.textContent = '✓ Your greeter is live and saved. She now welcomes every visitor.';
+        return;
+      }
+      if (s.status === 'failed') { msg.textContent = 'That take failed — try another face.'; return; }
+    }
+    msg.textContent = 'Taking longer than expected — check back shortly.';
+  } catch (e) { msg.textContent = 'Could not film her: ' + e.message; }
 }
 async function signIn() { await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }); }
 sb.auth.onAuthStateChange(function (_e, s) { if (s) onSignedIn(s); });
@@ -128,6 +208,7 @@ async function onSignedIn(session) {
     document.getElementById('founderCard').style.display = 'block';
     try { const { data: p } = await sb.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle(); document.getElementById('hiddenPrompt').value = (p && p.value && p.value.text) || ''; } catch (_) {}
     refreshDeploy();
+    loadGreeterTools();
   }
 }
 
@@ -148,6 +229,24 @@ async function toggleDeploy() {
   refreshDeploy();
 }
 function copyLink() { if (window._link) navigator.clipboard.writeText(window._link); }
+
+// 100% transparency: anyone can read the guidance our host follows; only the founder edits it.
+const GUIDANCE_BASE = "Our host is a warm, honest guide to The Factory's affiliate programme.\n\n" +
+  "• The Factory builds websites and web apps from a plain description, in about ninety seconds.\n" +
+  "• A partner shares The Factory with people who would truly benefit. When someone they invite joins AND takes a subscription, the partner earns £10 — once, when that person subscribes.\n" +
+  "• This is NOT a pyramid scheme. It is a flat, one-time £10. Never a growing cut, never more for joining early, never earnings from other people's recruits.\n" +
+  "• The spirit is genuine service and helping people build their own businesses — in the founder's tradition of helping young people start businesses for free.\n" +
+  "The host keeps replies short, warm, and truthful, and never invents rewards.";
+async function toggleTransparency() {
+  const b = document.getElementById('trBody'), a = document.getElementById('trArrow');
+  const show = b.style.display === 'none';
+  b.style.display = show ? 'block' : 'none'; a.textContent = show ? '▾' : '▸';
+  if (show && !document.getElementById('trText').textContent) {
+    let hidden = '';
+    try { const { data } = await sb.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle(); hidden = (data && data.value && data.value.text) || ''; } catch (_) {}
+    document.getElementById('trText').textContent = GUIDANCE_BASE + (hidden ? '\n\nThe founder has added this guidance:\n' + hidden : '');
+  }
+}
 
 async function saveHidden() {
   const text = document.getElementById('hiddenPrompt').value.trim();
