@@ -456,20 +456,28 @@ window.sayToHost = async function () { const inp = document.getElementById('live
 async function lSay(text) {
   if (!lAvatar) return;
   lChat.push({ role: 'user', content: text }); lst('Thinking…');
+  // 1. The mind: our brain composes her reply. If this fails, nothing to say.
+  let reply;
   try {
     const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
-    const reply = d.reply || 'Could you say that again?';
+    reply = d.reply || 'Could you say that again?';
     lChat.push({ role: 'assistant', content: reply });
-    // LITE mode = bring our own audio: our ElevenLabs voice makes the sound, she lip-syncs it.
+  } catch (e) { lst('Reply failed: ' + e.message); return; }
+  // 2. The voice: LITE mode = bring our own audio. Our ElevenLabs voice makes the
+  //    sound, she lip-syncs it. If the voice is down, her words still arrive as text.
+  try {
     lSpeaking = true;                                          // mute the mic so she doesn't hear herself
     const a = await lFetch('voice-speak', { text: reply, voiceId: lVoiceId || undefined, format: 'pcm24' });
     const chunks = (a && a.chunks) || [];
-    if (!chunks.length) throw new Error('no audio (check ElevenLabs key)');
+    if (!chunks.length) throw new Error('no audio returned');
     chunks.forEach(function (c) { lAvatar.repeatAudio(c); });  // feed her playback buffer, in order
     // Fallback un-mute in case the "finished speaking" event doesn't arrive.
     setTimeout(function () { lSpeaking = false; }, (chunks.length + 2) * 1000);
     lst('She is live — talk to her.');
-  } catch (e) { lSpeaking = false; lst('Reply failed: ' + e.message); }
+  } catch (e) {
+    lSpeaking = false;
+    lst('Her voice is offline (' + e.message + ') — she says: “' + reply + '”');
+  }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
 function lStartMic() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { lst('Type instead — this browser can’t listen.'); return; } lRec = new SR(); lRec.lang = 'en-GB'; lRec.interimResults = false; lRec.onresult = function (e) { if (lSpeaking) return; lSay(e.results[0][0].transcript); }; lRec.onend = function () { if (lMic) { try { lRec.start(); } catch (_) {} } }; lRec.start(); lMic = true; document.getElementById('liveMic').classList.add('on'); }
