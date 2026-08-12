@@ -424,6 +424,10 @@ window.startLiveHost = async function () {
   const gv = document.getElementById('greeterVideo');
   if (gv && gv.getAttribute('src')) { try { gv.currentTime = 0; gv.play(); } catch (_) {} }
   lst('Your host is connecting — she’ll be live in a few seconds…');
+  // Warm the brain and the voice while the video session spins up: a GET boots
+  // each function's engine (returns a harmless 405) without spending a token.
+  try { fetch(LSB + '/functions/v1/avatar-brain-fast', { headers: { 'Authorization': 'Bearer ' + LANON } }).catch(function () {}); } catch (_) {}
+  try { fetch(LSB + '/functions/v1/voice-speak', { headers: { 'Authorization': 'Bearer ' + LANON } }).catch(function () {}); } catch (_) {}
   try {
     await ensureSdk();
     const { token } = await lFetch('liveavatar-token', {});   // her face is baked into this token
@@ -457,35 +461,64 @@ window.sayToHost = async function () { const inp = document.getElementById('live
 async function lSay(text) {
   if (!lAvatar) return;
   lChat.push({ role: 'user', content: text }); lst('Thinking…');
-  // 1. The mind: our brain composes her reply. If this fails, nothing to say.
-  let reply;
+  // STREAMING pipeline: the brain's words arrive as they are written; the moment a
+  // sentence completes it goes to her voice; her lips are fed in strict order. She
+  // starts SPEAKING sentence one while the brain is still writing sentence two.
+  let reply = '';
   try {
-    const d = await lFetch('avatar-brain', { messages: lChat, model: lModel, system: lSystem });
-    reply = d.reply || 'Could you say that again?';
-    lChat.push({ role: 'assistant', content: reply });
-  } catch (e) { lst('Reply failed: ' + e.message); return; }
-  // 2. The voice: LITE mode = bring our own audio. Our ElevenLabs voice makes the
-  //    sound, she lip-syncs it. If the voice is down, her words still arrive as text.
-  //    SPEED: sentences are voiced IN PARALLEL and fed to her lips in order — she
-  //    starts speaking sentence one while the rest are still rendering.
-  try {
+    const resp = await fetch(LSB + '/functions/v1/avatar-brain-fast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + LANON },
+      body: JSON.stringify({ messages: lChat, model: lModel, system: lSystem })
+    });
+    if (!resp.ok || !resp.body) throw new Error('brain ' + resp.status);
     lSpeaking = true;                                          // mute the mic so she doesn't hear herself
-    const parts = reply.match(/[^.!?…]+[.!?…]+["”']?\s*/g) || [reply];
-    const jobs = parts.map(function (p) { return lFetch('voice-speak', { text: p.trim(), voiceId: lVoiceId || undefined, format: 'pcm24' }); });
-    let total = 0;
-    for (let i = 0; i < jobs.length; i++) {                    // await in ORDER, so her lips stay in order
-      const a = await jobs[i];
-      const chunks = (a && a.chunks) || [];
-      if (i === 0 && !chunks.length) throw new Error('no audio returned');
-      chunks.forEach(function (c) { lAvatar.repeatAudio(c); });
-      total += chunks.length;
+    const jobs = [];                                           // ordered voice jobs, one per sentence
+    const say = function (p) { p = p.trim(); if (p) jobs.push(lFetch('voice-speak', { text: p, voiceId: lVoiceId || undefined, format: 'pcm24' })); };
+    // The feeder walks the job queue IN ORDER and pours audio into her lips.
+    let ji = 0, streamDone = false, total = 0, fed = false;
+    const feeder = (async function () {
+      while (!streamDone || ji < jobs.length) {
+        if (ji < jobs.length) {
+          try { const a = await jobs[ji++]; const ch = (a && a.chunks) || []; ch.forEach(function (c) { lAvatar.repeatAudio(c); }); total += ch.length; if (ch.length) fed = true; }
+          catch (_) { /* one sentence failing must not silence the rest */ }
+        } else { await new Promise(function (r) { setTimeout(r, 50); }); }
+      }
+    })();
+    // Sip the SSE stream; cut at sentence ends.
+    const reader = resp.body.getReader(); const dec = new TextDecoder();
+    let buf = '', pend = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const events = buf.split('\n\n'); buf = events.pop() || '';
+      for (const ev of events) {
+        const line = ev.split('\n').find(function (l) { return l.indexOf('data: ') === 0; });
+        if (!line) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') continue;
+        try {
+          const t = JSON.parse(payload).t || '';
+          reply += t; pend += t;
+          let m;
+          while ((m = pend.match(/^[\s\S]*?[.!?…]["”']?(\s|$)/))) { say(m[0]); pend = pend.slice(m[0].length); }
+        } catch (_) {}
+      }
     }
+    say(pend);                                                 // whatever trails without punctuation
+    streamDone = true;
+    if (!reply.trim()) throw new Error('empty reply');
+    lChat.push({ role: 'assistant', content: reply.trim() });
+    await feeder;
+    if (!fed) { lst('Her voice is offline — she says: “' + reply.trim() + '”'); lSpeaking = false; return; }
     // Fallback un-mute in case the "finished speaking" event doesn't arrive.
     setTimeout(function () { lSpeaking = false; }, (total + 2) * 1000);
     lst('She is live — talk to her.');
   } catch (e) {
     lSpeaking = false;
-    lst('Her voice is offline (' + e.message + ') — she says: “' + reply + '”');
+    if (reply.trim()) { lChat.push({ role: 'assistant', content: reply.trim() }); lst('Her voice is offline (' + e.message + ') — she says: “' + reply.trim() + '”'); }
+    else lst('Reply failed: ' + e.message);
   }
 }
 window.toggleLiveMic = function () { lMic ? lStopMic() : lStartMic(); };
