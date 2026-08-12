@@ -409,6 +409,7 @@ async function loadLiveConfig() {
     const { data: p } = await sb2.from('site_settings').select('value').eq('key', 'affiliate_prompt').maybeSingle();
     const hidden = (p && p.value && p.value.text) || '';
     lSystem = "You are the live host of The Factory's partner programme, on a video call. Speak warmly, briefly, naturally. " +
+      "HARD RULE: one to three short spoken sentences per reply, never more — this is a live conversation, not a lecture. " +
       "Explain honestly: share The Factory with people who would benefit; when someone you invite joins and takes a subscription, they earn ten pounds — once. It is not a pyramid; a flat one-time reward. Be truthful, never pushy. " + (hidden ? ("Founder's guidance: " + hidden) : "");
   } catch (_) {}
   // Never disable the button — it must always respond with a clear message.
@@ -465,14 +466,22 @@ async function lSay(text) {
   } catch (e) { lst('Reply failed: ' + e.message); return; }
   // 2. The voice: LITE mode = bring our own audio. Our ElevenLabs voice makes the
   //    sound, she lip-syncs it. If the voice is down, her words still arrive as text.
+  //    SPEED: sentences are voiced IN PARALLEL and fed to her lips in order — she
+  //    starts speaking sentence one while the rest are still rendering.
   try {
     lSpeaking = true;                                          // mute the mic so she doesn't hear herself
-    const a = await lFetch('voice-speak', { text: reply, voiceId: lVoiceId || undefined, format: 'pcm24' });
-    const chunks = (a && a.chunks) || [];
-    if (!chunks.length) throw new Error('no audio returned');
-    chunks.forEach(function (c) { lAvatar.repeatAudio(c); });  // feed her playback buffer, in order
+    const parts = reply.match(/[^.!?…]+[.!?…]+["”']?\s*/g) || [reply];
+    const jobs = parts.map(function (p) { return lFetch('voice-speak', { text: p.trim(), voiceId: lVoiceId || undefined, format: 'pcm24' }); });
+    let total = 0;
+    for (let i = 0; i < jobs.length; i++) {                    // await in ORDER, so her lips stay in order
+      const a = await jobs[i];
+      const chunks = (a && a.chunks) || [];
+      if (i === 0 && !chunks.length) throw new Error('no audio returned');
+      chunks.forEach(function (c) { lAvatar.repeatAudio(c); });
+      total += chunks.length;
+    }
     // Fallback un-mute in case the "finished speaking" event doesn't arrive.
-    setTimeout(function () { lSpeaking = false; }, (chunks.length + 2) * 1000);
+    setTimeout(function () { lSpeaking = false; }, (total + 2) * 1000);
     lst('She is live — talk to her.');
   } catch (e) {
     lSpeaking = false;
